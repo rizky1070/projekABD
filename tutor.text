@@ -1,0 +1,5 @@
+diteminal ketik
+1. Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+2. venv\Scripts\activate
+3. pip install -r requirements.txt
+4. streamlit run app.py
