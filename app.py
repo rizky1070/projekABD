@@ -11,6 +11,72 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# --- FUNGSI LOAD DATA DEC (INTERNAL) ---
+@st.cache_data
+def load_dec_data():
+    file_path = 'clustered_data_dec.csv'
+    
+    try:
+        # Membaca file CSV lokal
+        df = pd.read_csv(file_path)
+        
+        # --- LOGIKA PENENTUAN LABEL KLASTER (OTOMATIS) ---
+        # Karena label 0 dan 1 bisa tertukar saat training ulang,
+        # kita tentukan label berdasarkan rata-rata GDP_per_Capita.
+        # Klaster dengan rata-rata GDP lebih rendah = "Developing/Low"
+        
+        avg_gdp = df.groupby('Cluster')['GDP_per_Capita'].mean()
+        
+        # Asumsi: Jika hanya ada 2 cluster (0 dan 1)
+        if 0 in avg_gdp.index and 1 in avg_gdp.index:
+            if avg_gdp[0] < avg_gdp[1]:
+                label_map = {0: 'Low Economy - Low Energy', 1: 'High Economy - High Energy'}
+            else:
+                label_map = {1: 'Low Economy - Low Energy', 0: 'High Economy - High Energy'}
+        else:
+            # Fallback jika data hanya memiliki 1 jenis cluster
+            label_map = {0: 'Cluster 0', 1: 'Cluster 1'}
+            
+        df['Cluster Label'] = df['Cluster'].map(label_map)
+        return df
+        
+    except FileNotFoundError:
+        # --- DATA DUMMY (JIKA FILE TIDAK DITEMUKAN) ---
+        # Ini hanya agar aplikasi tidak error saat Anda belum menaruh file csv
+        st.warning(f"File '{file_path}' tidak ditemukan. Menampilkan Data Dummy.")
+        
+        countries = ['Afghanistan', 'Indonesia', 'United States', 'China', 'India', 'Japan']
+        years = range(2000, 2024)
+        data = []
+        
+        for country in countries:
+            # Simulasi nilai dasar
+            base_gdp = 60000 if country in ['United States', 'Japan'] else 2000
+            base_energy = 8000 if country in ['United States', 'Japan'] else 1000
+            
+            # Tentukan cluster dummy
+            cluster = 1 if base_gdp > 20000 else 0 
+            
+            for year in years:
+                growth = 1 + (np.random.rand() * 0.1)
+                gdp_cap = base_gdp * growth * (1 + (year-2000)*0.05)
+                energy = base_energy * growth * (1 + (year-2000)*0.03)
+                
+                data.append({
+                    'Country Name': country,
+                    'Year': year,
+                    'Energy_Consumption_kWh': energy,
+                    'GDP': gdp_cap * 1000000, # Asumsi populasi
+                    'Population': 1000000,
+                    'GDP_per_Capita': gdp_cap,
+                    'log_Energy': np.log10(energy),
+                    'log_GDP_per_Capita': np.log10(gdp_cap),
+                    'Cluster': cluster,
+                    # Label dummy manual
+                    'Cluster Label': 'High Economy - High Energy' if cluster == 1 else 'Low Economy - Low Energy'
+                })
+        return pd.DataFrame(data)
+
 # --- FUNGSI LOAD DATA GRANGER (CACHE) ---
 @st.cache_data
 def load_granger_data():
@@ -86,37 +152,126 @@ elif pilihan_menu == "📈 Forecasting (LSTM)":
                 st.line_chart(chart_data)
                 st.caption("Grafik: Perbandingan Data Aktual vs Prediksi Model LSTM")
 
-# --- HALAMAN 2: DEC (Clustering) ---
+# --- HALAMAN 2: DEC (CLUSTERING) ---
 elif pilihan_menu == "🧩 Clustering (DEC)":
-    st.header("🧩 Segmentasi Negara (Clustering)")
-    st.subheader("Metode: Deep Embedded Clustering (DEC)")
+    st.header("🧩 Segmentasi Negara (Deep Embedded Clustering)")
+    st.markdown("Analisis pengelompokan negara berdasarkan **GDP per Kapita** dan **Konsumsi Energi**.")
     
-    st.write("Mengelompokkan negara berdasarkan profil GDP dan Konsumsi Energi.")
-    st.info("Berdasarkan analisis, jumlah cluster optimal adalah **K=2** (Low-Low & High-High).")
+    # 1. Load Data
+    df_dec = load_dec_data()
     
-    tab1, tab2 = st.tabs(["Visualisasi Cluster", "Detail Data"])
-    
-    with tab1:
-        if st.button("Tampilkan Scatter Plot"):
-            st.success("Menampilkan hasil clustering...")
+    # 2. Filter Layout (DI TENGAH HALAMAN, BUKAN SIDEBAR)
+    # Membuat container dengan background tipis atau separator agar rapi
+    with st.container():
+        st.subheader("⚙️ Filter Data")
+        
+        col_f1, col_f2 = st.columns([2, 1]) # Kolom 1 lebih lebar untuk Slider
+        
+        with col_f1:
+            # Slider Tahun
+            min_year = int(df_dec['Year'].min())
+            max_year = int(df_dec['Year'].max())
+            selected_year = st.slider("Pilih Tahun Analisis:", min_year, max_year, max_year)
             
-            # Placeholder Grafik Scatter Dummy
-            df_dummy = pd.DataFrame({
-                'Log GDP': np.random.rand(100) * 10,
-                'Log Energi': np.random.rand(100) * 10,
-                'Cluster': np.random.choice(['Low-Low', 'High-High'], 100)
-            })
+        with col_f2:
+            # Dropdown Negara
+            country_list = sorted(df_dec['Country Name'].unique())
+            default_ix = country_list.index('Indonesia') if 'Indonesia' in country_list else 0
+            selected_country = st.selectbox("Pilih Negara untuk Detail:", country_list, index=default_ix)
+
+    # Filter Dataframe
+    df_year = df_dec[df_dec['Year'] == selected_year]
+    
+    # --- LAYOUT VISUALISASI ---
+    st.markdown("---")
+    
+    # A. PETA DUNIA
+    st.subheader(f"🗺️ Peta Persebaran Kluster ({selected_year})")
+    
+    color_map = {
+        'Low Economy - Low Energy': '#FF6B6B',  # Merah
+        'High Economy - High Energy': '#4ECDC4' # Cyan
+    }
+    
+    fig_map = px.choropleth(
+        df_year,
+        locations="Country Name",
+        locationmode="country names",
+        color="Cluster Label",
+        hover_name="Country Name",
+        hover_data={
+            "GDP_per_Capita": ":.2f", 
+            "Energy_Consumption_kWh": ":.2f",
+            "Cluster": False,
+            "Country Name": False
+        },
+        color_discrete_map=color_map,
+        projection="natural earth",
+        title=f"Global Clustering: Ekonomi vs Energi ({selected_year})"
+    )
+    fig_map.update_layout(margin={"r":0,"t":30,"l":0,"b":0}, height=450)
+    st.plotly_chart(fig_map, use_container_width=True)
+    
+    # B. DETAIL NEGARA & SCATTER PLOT
+    col_kiri, col_kanan = st.columns([1, 2])
+    
+    with col_kiri:
+        st.subheader(f"📊 Detail: {selected_country}")
+        
+        country_data = df_year[df_year['Country Name'] == selected_country]
+        
+        if not country_data.empty:
+            row = country_data.iloc[0]
+            label = row['Cluster Label']
             
-            st.scatter_chart(
-                df_dummy,
-                x='Log GDP',
-                y='Log Energi',
-                color='Cluster',
-                size=20
+            if "High" in label:
+                st.success(f"**Status:** {label}")
+                desc = "Negara ini memiliki tingkat ekonomi dan konsumsi energi yang **Tinggi**."
+            else:
+                st.warning(f"**Status:** {label}")
+                desc = "Negara ini memiliki tingkat ekonomi dan konsumsi energi yang **Rendah/Berkembang**."
+            
+            st.markdown(desc)
+            
+            m1, m2 = st.columns(2)
+            m1.metric("GDP/Kapita", f"${row['GDP_per_Capita']:,.0f}")
+            m2.metric("Energi/Kapita", f"{row['Energy_Consumption_kWh']:,.0f} kWh")
+            
+            st.caption(f"Log-Scale: GDP={row['log_GDP_per_Capita']:.2f}, Energi={row['log_Energy']:.2f}")
+        else:
+            st.error(f"Data untuk {selected_country} pada tahun {selected_year} tidak tersedia.")
+
+    with col_kanan:
+        st.subheader("📈 Posisi dalam Cluster (Scatter Plot)")
+        
+        fig_scatter = px.scatter(
+            df_year,
+            x="log_GDP_per_Capita",
+            y="log_Energy",
+            color="Cluster Label",
+            hover_name="Country Name",
+            color_discrete_map=color_map,
+            title=f"Sebaran Negara (Log Scale) - {selected_year}",
+            labels={
+                "log_GDP_per_Capita": "Log GDP per Capita",
+                "log_Energy": "Log Energy Consumption"
+            }
+        )
+        
+        # Highlight Negara Terpilih
+        highlight = df_year[df_year['Country Name'] == selected_country]
+        if not highlight.empty:
+            fig_scatter.add_scatter(
+                x=highlight['log_GDP_per_Capita'],
+                y=highlight['log_Energy'],
+                mode='markers+text',
+                marker=dict(size=15, color='black', symbol='circle-open', line=dict(width=3)),
+                text=[selected_country],
+                textposition="top center",
+                name="Pilihan"
             )
-            
-    with tab2:
-        st.write("Data hasil clustering akan muncul di sini.")
+
+        st.plotly_chart(fig_scatter, use_container_width=True)
 
 # --- HALAMAN 3: GRANGER CAUSALITY (METODE ANDA) ---
 elif pilihan_menu == "🔗 Kausalitas (Granger)":
