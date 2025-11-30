@@ -1,0 +1,173 @@
+Country,Hypothesis,P_Val_Energy_to_GDP,P_Val_GDP_to_Energy
+Afghanistan,Conservation Hypothesis,0.3523,0.0343
+Albania,Neutrality,0.2377,0.2988
+Algeria,Conservation Hypothesis,0.1673,0.0007
+American Samoa,Conservation Hypothesis,0.5025,0.0008
+Angola,Conservation Hypothesis,0.2119,0.003
+Antigua and Barbuda,Neutrality,0.5683,0.2675
+Argentina,Neutrality,0.1787,0.7117
+Armenia,Neutrality,0.9677,0.7124
+Aruba,Conservation Hypothesis,0.1854,0.0164
+Australia,Neutrality,0.7957,0.8514
+Austria,Conservation Hypothesis,0.0626,0.0299
+Azerbaijan,Neutrality,0.6224,0.6409
+Bahrain,Neutrality,0.1167,0.1932
+Barbados,Conservation Hypothesis,0.6564,0.0341
+Belarus,Neutrality,0.2121,0.6743
+Belgium,Neutrality,0.1172,0.9294
+Belize,Neutrality,0.3511,0.6515
+Benin,Neutrality,0.7959,0.6223
+Bermuda,Neutrality,0.7136,0.132
+Bhutan,Neutrality,0.9499,0.3487
+Bolivia,Neutrality,0.0692,0.625
+Bosnia and Herzegovina,Conservation Hypothesis,0.2971,0.0025
+Botswana,Neutrality,0.9936,0.1306
+Brazil,Neutrality,0.3732,0.6984
+Bulgaria,Neutrality,0.884,0.5865
+Burkina Faso,Neutrality,0.5381,0.7334
+Burundi,Neutrality,0.6775,0.9452
+Cambodia,Neutrality,0.3431,0.8044
+Cameroon,Neutrality,0.0841,0.7729
+Canada,Neutrality,0.7071,0.8154
+Cayman Islands,Neutrality,0.1979,0.2745
+Central African Republic,Neutrality,0.3185,0.9131
+Chad,Neutrality,0.464,0.8581
+Chile,Neutrality,0.8679,0.5362
+China,Neutrality,0.1169,0.1287
+Colombia,Neutrality,0.9555,0.1375
+Comoros,Neutrality,0.77,0.4381
+Costa Rica,Neutrality,0.6187,0.1253
+Cote d'Ivoire,Neutrality,0.4804,0.1104
+Croatia,Neutrality,0.1553,0.7287
+Cuba,Neutrality,0.9334,0.6249
+Cyprus,Neutrality,0.7885,0.8413
+Czechia,Neutrality,0.7045,0.9851
+Denmark,Neutrality,0.0877,0.6921
+Djibouti,Neutrality,0.268,0.7987
+Dominica,Neutrality,0.9046,0.8933
+Dominican Republic,Neutrality,0.3074,0.7317
+Ecuador,Neutrality,0.2566,0.4782
+El Salvador,Feedback Hypothesis,0.0224,0.0055
+Equatorial Guinea,Neutrality,0.8287,0.1245
+Eritrea,Neutrality,0.4519,0.1796
+Estonia,Growth Hypothesis,0.0294,0.1996
+Eswatini,Neutrality,0.9798,0.5142
+Ethiopia,Neutrality,0.4467,0.3324
+Faroe Islands,Growth Hypothesis,0.0001,0.0527
+Fiji,Neutrality,0.2158,0.7414
+Finland,Growth Hypothesis,0.0131,0.2942
+France,Neutrality,0.5252,0.2754
+French Polynesia,Neutrality,0.7464,0.7813
+Gabon,Neutrality,0.0661,0.9798
+Georgia,Conservation Hypothesis,0.9905,0.0337
+Germany,Growth Hypothesis,0.0326,0.6008
+Ghana,Neutrality,0.2887,0.5319
+Greece,Growth Hypothesis,0.0393,0.6428
+Greenland,Neutrality,0.9344,0.6751
+Grenada,Neutrality,0.9813,0.4528
+Guam,Neutrality,0.6434,0.34
+Guatemala,Neutrality,0.8881,0.1482
+Guinea,Neutrality,0.3764,0.445
+Guinea-Bissau,Neutrality,0.5682,0.8891
+Guyana,Neutrality,0.4086,0.2856
+Haiti,Conservation Hypothesis,0.9956,0.0433
+Honduras,Growth Hypothesis,0.0431,0.5149
+Hungary,Neutrality,0.8992,0.7416
+Iceland,Neutrality,0.5485,0.7062
+India,Neutrality,0.2092,0.0675
+Indonesia,Neutrality,0.769,0.1964
+Iraq,Conservation Hypothesis,0.1663,0.0
+Ireland,Neutrality,0.129,0.6164
+Israel,Conservation Hypothesis,0.4639,0.0426
+Italy,Neutrality,0.2594,0.6669
+Jamaica,Neutrality,0.957,0.2006
+Japan,Neutrality,0.5337,0.1299
+Jordan,Neutrality,0.8874,0.5824
+Kazakhstan,Neutrality,0.2328,0.1418
+Kenya,Neutrality,0.9947,0.6964
+Kiribati,Neutrality,0.2068,0.9569
+Kosovo,Neutrality,0.4664,0.7575
+Kuwait,Neutrality,0.4621,0.0755
+Latvia,Neutrality,0.479,0.4509
+Lebanon,Feedback Hypothesis,0.0469,0.0012
+Lesotho,Neutrality,0.4749,0.8004
+Liberia,Neutrality,0.5979,0.1099
+Libya,Neutrality,0.5102,0.9638
+Lithuania,Neutrality,0.9436,0.0904
+Luxembourg,Neutrality,0.2522,0.9907
+Madagascar,Neutrality,0.7325,0.6002
+Malawi,Neutrality,0.5944,0.544
+Malaysia,Neutrality,0.5626,0.9188
+Maldives,Neutrality,0.44,0.4641
+Mali,Neutrality,0.4089,0.8171
+Malta,Neutrality,0.6349,0.4806
+Mauritania,Conservation Hypothesis,0.0975,0.0002
+Mauritius,Neutrality,0.9751,0.801
+Mexico,Neutrality,0.6887,0.3251
+Moldova,Neutrality,0.497,0.9894
+Mongolia,Neutrality,0.2528,0.0992
+Montenegro,Neutrality,0.9229,0.8703
+Morocco,Neutrality,0.747,0.6447
+Mozambique,Neutrality,0.9994,0.9919
+Myanmar,Neutrality,0.7755,0.1119
+Namibia,Neutrality,0.4672,0.3236
+Nauru,Neutrality,0.609,0.5499
+Nepal,Neutrality,0.5266,0.8247
+Netherlands,Growth Hypothesis,0.0022,0.8636
+New Caledonia,Neutrality,0.4788,0.3231
+New Zealand,Neutrality,0.3638,0.4391
+Nicaragua,Neutrality,0.8361,0.0716
+Niger,Neutrality,0.909,0.0671
+Nigeria,Neutrality,0.7922,0.5432
+North America,Neutrality,0.0886,0.2171
+North Macedonia,Neutrality,0.9281,0.9157
+Norway,Neutrality,0.2817,0.9043
+Oman,Neutrality,0.4111,0.6737
+Pakistan,Growth Hypothesis,0.0019,0.3128
+Panama,Neutrality,0.0633,0.1193
+Papua New Guinea,Neutrality,0.7439,0.8631
+Paraguay,Neutrality,0.3176,0.2173
+Peru,Neutrality,0.6907,0.196
+Philippines,Neutrality,0.9901,0.5653
+Poland,Neutrality,0.8611,0.4119
+Portugal,Neutrality,0.1149,0.3706
+Qatar,Neutrality,0.1256,0.4071
+Romania,Neutrality,0.7722,0.5219
+Rwanda,Conservation Hypothesis,0.2863,0.0065
+Samoa,Neutrality,0.8448,0.7754
+Sao Tome and Principe,Neutrality,0.2295,0.6399
+Saudi Arabia,Conservation Hypothesis,0.2878,0.0
+Senegal,Conservation Hypothesis,0.8981,0.0483
+Serbia,Neutrality,0.4132,0.0589
+Seychelles,Neutrality,0.1927,0.9845
+Sierra Leone,Growth Hypothesis,0.0005,0.8615
+Singapore,Neutrality,0.3604,0.9145
+Slovenia,Neutrality,0.6903,0.1226
+Solomon Islands,Neutrality,0.8725,0.9467
+South Africa,Conservation Hypothesis,0.216,0.0376
+Spain,Neutrality,0.4308,0.8935
+Sri Lanka,Neutrality,0.4658,0.8821
+Sudan,Growth Hypothesis,0.0486,0.2053
+Suriname,Neutrality,0.406,0.12
+Sweden,Neutrality,0.4712,0.5643
+Switzerland,Neutrality,0.1012,0.7878
+Tajikistan,Neutrality,0.1766,0.4579
+Tanzania,Neutrality,0.4174,0.1601
+Thailand,Neutrality,0.8807,0.5502
+Togo,Neutrality,0.4701,0.4427
+Tonga,Neutrality,0.4334,0.1681
+Trinidad and Tobago,Neutrality,0.5341,0.557
+Tunisia,Growth Hypothesis,0.0058,0.2679
+Turkmenistan,Conservation Hypothesis,0.7809,0.0215
+Turks and Caicos Islands,Neutrality,0.757,0.8627
+Uganda,Growth Hypothesis,0.0023,0.2403
+Ukraine,Neutrality,0.9171,0.9311
+United Arab Emirates,Neutrality,0.2628,0.9231
+United Kingdom,Growth Hypothesis,0.0154,0.7014
+United States,Neutrality,0.1952,0.1871
+Uruguay,Neutrality,0.9698,0.0788
+Uzbekistan,Neutrality,0.1689,0.6596
+Vanuatu,Neutrality,0.8023,0.4859
+World,Neutrality,0.4385,0.1957
+Zambia,Neutrality,0.6683,0.5848
+Zimbabwe,Neutrality,0.3204,0.0714

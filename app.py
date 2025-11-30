@@ -1,13 +1,23 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.express as px
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(
     page_title="Dashboard Analisis Big Data Energi & Ekonomi",
+    page_icon="🌍",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# --- FUNGSI LOAD DATA GRANGER (CACHE) ---
+@st.cache_data
+def load_granger_data():
+    try:
+        return pd.read_csv('granger_result_final.csv')
+    except FileNotFoundError:
+        return None
 
 # --- SIDEBAR MENU (RADIO BUTTON) ---
 st.sidebar.title("Navigasi Sistem")
@@ -20,7 +30,7 @@ pilihan_menu = st.sidebar.radio(
         "🏠 Beranda",
         "📈 Forecasting (LSTM)",
         "🧩 Clustering (DEC)",
-        "🔗 Asosiasi (Apriori)",
+        "🔗 Kausalitas (Granger)",  # <--- GANTI NAMA MENU DI SINI
         "🌲 Klasifikasi (Deep Forest)"
     ]
 )
@@ -36,16 +46,14 @@ if pilihan_menu == "🏠 Beranda":
     untuk menganalisis hubungan antara **PDB (Ekonomi)**, **Konsumsi Energi**, dan **Populasi**:
 
     1.  **LSTM (Long Short-Term Memory)**
-        * [cite_start]*Fungsi:* Memprediksi tren konsumsi energi global di masa depan berdasarkan data historis[cite: 50, 264].
+        * *Fungsi:* Memprediksi tren konsumsi energi global di masa depan berdasarkan data historis.
     2.  **DEC (Deep Embedded Clustering)**
-        * [cite_start]*Fungsi:* Melakukan segmentasi negara menjadi klaster (misal: "Low-Low" dan "High-High")[cite: 36, 1181].
-    3.  **Apriori (Association Rule Mining)**
-        * [cite_start]*Fungsi:* Menemukan pola aturan tersembunyi, contoh: *"Jika GDP Rendah, maka Energi Rendah"*[cite: 37, 279].
+        * *Fungsi:* Melakukan segmentasi negara menjadi klaster (misal: "Low-Low" dan "High-High").
+    3.  **Granger Causality Test** * *Fungsi:* Menentukan **arah hubungan sebab-akibat**. Apakah Ekonomi mendorong Energi, atau Energi mendorong Ekonomi?
     4.  **Deep Forest (gcForest)**
-        * [cite_start]*Fungsi:* Mengklasifikasikan kategori energi negara menggunakan pendekatan Deep Learning berbasis pohon keputusan[cite: 38, 281].
+        * *Fungsi:* Mengklasifikasikan kategori energi negara menggunakan pendekatan Deep Learning berbasis pohon keputusan.
     """)
     
-    # Perhatikan baris di bawah ini, pastikan ada kurung tutup ')'
     col1, col2, col3 = st.columns(3) 
     
     col1.metric("Total Negara", "266", "Data World Bank")
@@ -83,21 +91,16 @@ elif pilihan_menu == "🧩 Clustering (DEC)":
     st.header("🧩 Segmentasi Negara (Clustering)")
     st.subheader("Metode: Deep Embedded Clustering (DEC)")
     
-    # Pastikan baris ini punya kurung tutup ')' di akhir!
     st.write("Mengelompokkan negara berdasarkan profil GDP dan Konsumsi Energi.")
-    
-    # Baris ini yang tadi error (sekarang harusnya aman)
     st.info("Berdasarkan analisis, jumlah cluster optimal adalah **K=2** (Low-Low & High-High).")
     
     tab1, tab2 = st.tabs(["Visualisasi Cluster", "Detail Data"])
     
     with tab1:
         if st.button("Tampilkan Scatter Plot"):
-            # TODO: Masukkan logika load hasil clustering
             st.success("Menampilkan hasil clustering...")
             
             # Placeholder Grafik Scatter Dummy
-            # Membuat data dummy seolah-olah GDP vs Energi
             df_dummy = pd.DataFrame({
                 'Log GDP': np.random.rand(100) * 10,
                 'Log Energi': np.random.rand(100) * 10,
@@ -115,28 +118,73 @@ elif pilihan_menu == "🧩 Clustering (DEC)":
     with tab2:
         st.write("Data hasil clustering akan muncul di sini.")
 
-# --- HALAMAN 3: Apriori (Asosiasi) ---
-elif pilihan_menu == "🔗 Asosiasi (Apriori)":
-    st.header("🔗 Analisis Pola Asosiasi")
-    st.subheader("Metode: Algoritma Apriori")
-    st.write("Menemukan aturan 'Sebab-Akibat' (If-Then rules) antara kategori ekonomi dan energi.")
+# --- HALAMAN 3: GRANGER CAUSALITY (METODE ANDA) ---
+elif pilihan_menu == "🔗 Kausalitas (Granger)":
+    st.header("🔗 Analisis Kausalitas Energi & Ekonomi")
+    st.subheader("Metode: Granger Causality Test")
+    st.markdown("Menentukan arah hubungan: **Apakah Energi mendorong Ekonomi, atau sebaliknya?**")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        min_support = st.slider("Minimum Support", 0.01, 0.5, 0.1)
-    with col2:
-        min_conf = st.slider("Minimum Confidence", 0.1, 1.0, 0.6)
+    # 1. Load Data Granger
+    df_granger = load_granger_data()
+    
+    if df_granger is None:
+        st.error("⚠️ File 'granger_result_final.csv' tidak ditemukan.")
+        st.warning("Harap jalankan script analisis Granger terlebih dahulu untuk menghasilkan data.")
+    else:
+        # Layout: Kiri (Pilih Negara & Info), Kanan (Peta)
+        col_kiri, col_kanan = st.columns([1, 2])
         
-    if st.button("Cari Aturan (Generate Rules)"):
-        # TODO: Masukkan logika Apriori di sini
-        st.success("Analisis selesai. Menampilkan aturan yang ditemukan:")
+        with col_kiri:
+            st.markdown("### 🔍 Cek Negara")
+            daftar_negara = sorted(df_granger['Country'].unique())
+            selected_country = st.selectbox("Pilih Negara:", daftar_negara)
+            
+            # Ambil Data Negara
+            country_data = df_granger[df_granger['Country'] == selected_country].iloc[0]
+            hasil = country_data['Hypothesis']
+            
+            st.divider()
+            st.markdown(f"**Hasil Analisis: {selected_country}**")
+            
+            # Tampilan Kartu Hasil
+            if hasil == 'Neutrality':
+                st.info(f"🟦 **{hasil}**")
+                st.caption("Tidak ada hubungan sebab-akibat langsung dalam jangka pendek.")
+            elif hasil == 'Growth Hypothesis':
+                st.success(f"🟩 **{hasil}**")
+                st.caption("Energi mendorong Pertumbuhan Ekonomi.")
+            elif hasil == 'Conservation Hypothesis':
+                st.warning(f"🟨 **{hasil}**")
+                st.caption("Pertumbuhan Ekonomi mendorong Konsumsi Energi.")
+            else:
+                st.error(f"🟪 **{hasil}**")
+                st.caption("Saling mempengaruhi (Feedback).")
+                
+            st.markdown("---")
+            st.write("**Statistik (P-Value):**")
+            st.write(f"Energi → GDP: `{country_data['P_Val_Energy_to_GDP']}`")
+            st.write(f"GDP → Energi: `{country_data['P_Val_GDP_to_Energy']}`")
         
-        # [cite_start]Contoh hasil hardcoded sesuai dokumen Anda [cite: 1293]
-        st.markdown("""
-        **Aturan Signifikan yang Ditemukan:**
-        1. `{GDP_Low} -> {Energy_Low}` (Lift: 2.40)
-        2. `{GDP_High} -> {Energy_High}` (Lift: 2.35)
-        """)
+        with col_kanan:
+            st.markdown("### 🗺️ Peta Persebaran Global")
+            # Membuat Peta Choropleth
+            fig = px.choropleth(
+                df_granger,
+                locations="Country",
+                locationmode='country names',
+                color="Hypothesis",
+                color_discrete_map={
+                    'Neutrality': 'lightgrey',
+                    'Growth Hypothesis': 'green',
+                    'Conservation Hypothesis': 'orange',
+                    'Feedback Hypothesis': 'purple'
+                },
+                hover_name="Country",
+                hover_data=['P_Val_Energy_to_GDP', 'P_Val_GDP_to_Energy'],
+                height=500
+            )
+            fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+            st.plotly_chart(fig, use_container_width=True)
 
 # --- HALAMAN 4: Deep Forest (Klasifikasi) ---
 elif pilihan_menu == "🌲 Klasifikasi (Deep Forest)":
