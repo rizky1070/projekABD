@@ -8,505 +8,409 @@ from tensorflow.keras.models import load_model
 from sklearn.preprocessing import MinMaxScaler
 import os
 import pickle
-import time  # Pastikan time diimpor
 import warnings
-warnings.filterwarnings("ignore")
 
-base_path = os.path.dirname(os.path.abspath(__file__))
-model_path = os.path.join(base_path, "model.h5")
-scaler_path = os.path.join(base_path, "scalers.pkl")
+warnings.filterwarnings("ignore")
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(
-    page_title="Dashboard Analisis Big Data Energi & Ekonomi",
+    page_title="Energy-Economy Nexus AI Dashboard",
     page_icon="🌍",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- FUNGSI GENERATE MAP DATA (UNTUK DEEP FOREST) ---
-# Fungsi ini diperlukan agar Tab "Peta Prediksi Global" tidak error
-def generate_map_data():
-    # Simulasi data untuk peta global hasil klasifikasi Deep Forest
-    # Dalam implementasi nyata, ganti ini dengan hasil prediksi model terhadap seluruh negara
-    data = {
-        'ISO_Code': ['IDN', 'USA', 'CHN', 'IND', 'JPN', 'BRA', 'RUS', 'DEU', 'GBR', 'FRA'],
-        'Country': ['Indonesia', 'United States', 'China', 'India', 'Japan', 'Brazil', 'Russia', 'Germany', 'United Kingdom', 'France'],
-        'Predicted_Cluster': [
-            'Cluster 0 (Low-Low)', 'Cluster 1 (High-High)', 'Cluster 1 (High-High)', 
-            'Cluster 0 (Low-Low)', 'Cluster 1 (High-High)', 'Cluster 0 (Low-Low)', 
-            'Cluster 1 (High-High)', 'Cluster 1 (High-High)', 'Cluster 1 (High-High)', 'Cluster 1 (High-High)'
-        ],
-        'Probability': [0.85, 0.99, 0.92, 0.88, 0.95, 0.78, 0.82, 0.96, 0.94, 0.93]
+# CSS Custom
+st.markdown("""
+<style>
+    .metric-card {
+        background-color: #f0f2f6;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
     }
-    return pd.DataFrame(data)
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        border-radius: 4px 4px 0px 0px;
+        font-weight: 600;
+    }
+    .warning-box {
+        background-color: #fffae5;
+        border-left: 5px solid #ffc107;
+        padding: 15px;
+        border-radius: 5px;
+        color: #664d03;
+        margin-bottom: 20px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# --- FUNGSI LOAD DATA DEC (INTERNAL) ---
+# -------------------------------------------------------------------------
+# 1. FUNGSI LOAD DATA (TERPUSAT)
+# -------------------------------------------------------------------------
+base_path = os.path.dirname(os.path.abspath(__file__))
+model_path = os.path.join(base_path, "model.h5")
+scaler_path = os.path.join(base_path, "scalers.pkl")
+
 @st.cache_data
-def load_dec_data():
-    file_path = 'clustered_data_dec.csv'
+def load_all_data():
+    """Memuat semua dataset sekaligus agar sinkron"""
+    data = {}
     
+    # 1. Data LSTM (Data Bersih)
     try:
-        # Membaca file CSV lokal
-        df = pd.read_csv(file_path)
-        
-        # --- LOGIKA PENENTUAN LABEL KLASTER (OTOMATIS) ---
-        avg_gdp = df.groupby('Cluster')['GDP_per_Capita'].mean()
-        
-        # Asumsi: Jika hanya ada 2 cluster (0 dan 1)
+        df_lstm = pd.read_csv("data_bersih.csv")
+        df_lstm["log_Energy"] = np.log10(df_lstm["Energy_Consumption_kWh"] + 1)
+        data['lstm'] = df_lstm
+    except:
+        data['lstm'] = None
+
+    # 2. Data DEC (Clustering)
+    try:
+        df_dec = pd.read_csv('clustered_data_dec.csv')
+        # Logic Labeling
+        avg_gdp = df_dec.groupby('Cluster')['GDP_per_Capita'].mean()
         if 0 in avg_gdp.index and 1 in avg_gdp.index:
             if avg_gdp[0] < avg_gdp[1]:
                 label_map = {0: 'Low Economy - Low Energy', 1: 'High Economy - High Energy'}
             else:
                 label_map = {1: 'Low Economy - Low Energy', 0: 'High Economy - High Energy'}
         else:
-            # Fallback jika data hanya memiliki 1 jenis cluster
             label_map = {0: 'Cluster 0', 1: 'Cluster 1'}
-            
-        df['Cluster Label'] = df['Cluster'].map(label_map)
-        return df
-        
-    except FileNotFoundError:
-        # --- DATA DUMMY (JIKA FILE TIDAK DITEMUKAN) ---
-        st.warning(f"File '{file_path}' tidak ditemukan. Menampilkan Data Dummy.")
-        
-        countries = ['Afghanistan', 'Indonesia', 'United States', 'China', 'India', 'Japan']
-        years = range(2000, 2024)
-        data = []
-        
-        for country in countries:
-            # Simulasi nilai dasar
-            base_gdp = 60000 if country in ['United States', 'Japan'] else 2000
-            base_energy = 8000 if country in ['United States', 'Japan'] else 1000
-            
-            # Tentukan cluster dummy
-            cluster = 1 if base_gdp > 20000 else 0 
-            
-            for year in years:
-                growth = 1 + (np.random.rand() * 0.1)
-                gdp_cap = base_gdp * growth * (1 + (year-2000)*0.05)
-                energy = base_energy * growth * (1 + (year-2000)*0.03)
-                
-                data.append({
-                    'Country Name': country,
-                    'Year': year,
-                    'Energy_Consumption_kWh': energy,
-                    'GDP': gdp_cap * 1000000, # Asumsi populasi
-                    'Population': 1000000,
-                    'GDP_per_Capita': gdp_cap,
-                    'log_Energy': np.log10(energy),
-                    'log_GDP_per_Capita': np.log10(gdp_cap),
-                    'Cluster': cluster,
-                    # Label dummy manual
-                    'Cluster Label': 'High Economy - High Energy' if cluster == 1 else 'Low Economy - Low Energy'
-                })
-        return pd.DataFrame(data)
-
-# --- FUNGSI LOAD DATA GRANGER (CACHE) ---
-@st.cache_data
-def load_granger_data():
-    try:
-        return pd.read_csv('granger_result_final.csv')
-    except FileNotFoundError:
-        return None
-    
-# ----Fungsi load data lstm---------
-@st.cache_data
-def load_lstm_data():
-    try:
-        df = pd.read_csv("data_bersih.csv")
-        df["log_Energy"] = np.log10(df["Energy_Consumption_kWh"] + 1)
-        return df
+        df_dec['Cluster Label'] = df_dec['Cluster'].map(label_map)
+        data['dec'] = df_dec
     except:
-        st.error("❌ File 'data_bersih.csv' tidak ditemukan!")
-        return None
+        data['dec'] = None
 
-# --- SIDEBAR MENU (RADIO BUTTON) ---
-st.sidebar.title("Navigasi Sistem")
-st.sidebar.markdown("---")
+    # 3. Data Granger
+    try:
+        data['granger'] = pd.read_csv('granger_result_final.csv')
+    except:
+        data['granger'] = None
+        
+    return data
 
-# Menggunakan Radio Button agar menu terlihat semua (bukan dropdown)
-pilihan_menu = st.sidebar.radio(
-    "Pilih Metode Analisis:",
-    [
-        "🏠 Beranda",
-        "📈 Forecasting (LSTM)",
-        "🧩 Clustering (DEC)",
-        "🔗 Kausalitas (Granger)",  
-        "🌲 Klasifikasi (Deep Forest)" # MENU INI SEKARANG AKTIF
-    ]
+# Load Data Awal
+ALL_DATA = load_all_data()
+
+# -------------------------------------------------------------------------
+# 2. SIDEBAR (GLOBAL CONTROLLER)
+# -------------------------------------------------------------------------
+st.sidebar.title("🌍 Navigasi Utama")
+
+# A. PILIH MODE
+mode_analisis = st.sidebar.radio(
+    "Mode Tampilan:",
+    ["📊 Executive Dashboard", "📈 Detail: Forecasting", "🧩 Detail: Clustering", "🔗 Detail: Kausalitas"]
 )
 
 st.sidebar.markdown("---")
-st.sidebar.info("Sistem Analisis Big Data\nKelompok 4")
+st.sidebar.subheader("🎛️ Filter Global")
 
-# --- HALAMAN BERANDA ---
-if pilihan_menu == "🏠 Beranda":
-    st.title("Analisis Big Data: Nexus Energi & Ekonomi")
-    st.markdown("""
-    Selamat datang di Dashboard Analisis Big Data. Sistem ini menggunakan 4 metode utama 
-    untuk menganalisis hubungan antara **PDB (Ekonomi)**, **Konsumsi Energi**, dan **Populasi**:
+# B. PILIH NEGARA (Global State)
+if ALL_DATA['lstm'] is not None:
+    country_list = sorted(ALL_DATA['lstm']['Country Name'].unique())
+else:
+    country_list = ["Indonesia"]
 
-    1.  **LSTM (Long Short-Term Memory)**
-        * *Fungsi:* Memprediksi tren konsumsi energi global di masa depan berdasarkan data historis.
-    2.  **DEC (Deep Embedded Clustering)**
-        * *Fungsi:* Melakukan segmentasi negara menjadi klaster (misal: "Low-Low" dan "High-High").
-    3.  **Granger Causality Test** * *Fungsi:* Menentukan **arah hubungan sebab-akibat**. Apakah Ekonomi mendorong Energi, atau Energi mendorong Ekonomi?
-    4.  **Deep Forest (gcForest)**
-        * *Fungsi:* Mengklasifikasikan kategori energi negara menggunakan pendekatan Deep Learning berbasis pohon keputusan.
-    """)
+if 'selected_country' not in st.session_state:
+    st.session_state.selected_country = "Indonesia"
+
+selected_country = st.sidebar.selectbox(
+    "Pilih Negara Fokus:",
+    country_list,
+    index=country_list.index(st.session_state.selected_country) if st.session_state.selected_country in country_list else 0,
+    key='country_selector'
+)
+st.session_state.selected_country = selected_country
+
+# C. PILIH TAHUN (Global State)
+current_year_max = 2023
+if ALL_DATA['dec'] is not None:
+    current_year_max = int(ALL_DATA['dec']['Year'].max())
+
+selected_year = st.sidebar.slider("Tahun Analisis (Peta):", 2000, current_year_max, current_year_max)
+
+st.sidebar.info(f"Fokus Analisis: **{selected_country}**")
+
+# -------------------------------------------------------------------------
+# 3. HELPER FUNCTIONS
+# -------------------------------------------------------------------------
+
+def get_country_metrics(country, year=None):
+    if ALL_DATA['dec'] is None: return None
+    df = ALL_DATA['dec']
     
-    col1, col2, col3 = st.columns(3) 
+    # Filter Negara
+    df_c = df[df['Country Name'] == country]
+    if df_c.empty: return None
     
-    col1.metric("Total Negara", "266", "Data World Bank")
-    col2.metric("Rentang Data", "1960 - 2024", "Tahun")
-    col3.metric("Metode AI", "4 Model", "Integrated")
+    # Filter Tahun (Strict)
+    if year is not None:
+        df_year = df_c[df_c['Year'] == year]
+        if df_year.empty:
+            return None 
+        return df_year.iloc[0]
+        
+    # Default
+    return df_c.sort_values('Year').iloc[-1]
 
-# --- HALAMAN 1: LSTM (Forecasting) ---
-elif pilihan_menu == "📈 Forecasting (LSTM)":
-
-    st.header("📈 Peramalan Konsumsi Energi (LSTM)")
-
-    df_lstm = load_lstm_data()
-    if df_lstm is None or df_lstm.empty:
-        st.stop()
-
-    # PILIH NEGARA
-    countries = sorted(df_lstm["Country Name"].unique())
-    default_idx = countries.index("Indonesia") if "Indonesia" in countries else 0
-    selected_country = st.selectbox("Pilih Negara:", countries, index=default_idx)
-
-    # PARAMETER INPUT (look_back DIHILANGKAN)
-    colA, colB = st.columns(2)
-    with colA:
-        n_future = st.number_input("Prediksi berapa tahun ke depan?", 1, 25, 10)
-    with colB:
-        run_btn = st.button("🔮 Jalankan Prediksi")
-
-    st.markdown("---")
-
-    if run_btn:
-
-        # ---------------------------------------------------------
-        # 1. LOAD MODEL (Dengan Fix LSTM & compile=False)
-        # ---------------------------------------------------------
-        try:
-            from tensorflow.keras.layers import LSTM
-
-            # Wrapper untuk mengatasi error 'time_major'
-            class FixedLSTM(LSTM):
-                def __init__(self, **kwargs):
-                    if 'time_major' in kwargs:
-                        kwargs.pop('time_major')
-                    super().__init__(**kwargs)
-
-            # Load model tanpa compile (mengatasi error metrics)
-            model = load_model(
-                model_path, 
-                custom_objects={'LSTM': FixedLSTM},
-                compile=False 
-            )
-            st.success("✅ Model LSTM berhasil dimuat!")
-            
-        except Exception as e:
-            st.error(f"❌ Tidak dapat memuat model 'model.h5' → {e}")
-            st.stop()
-
-        # ---------------------------------------------------------
-        # 2. TENTUKAN LOOK_BACK (Bagian yang Hilang)
-        # ---------------------------------------------------------
-        try:
-            # Mencoba mengambil look_back dari arsitektur model
-            # Input shape biasanya format: (None, look_back, n_features)
-            input_shape = model.input_shape
-            
-            # Cek apakah input_shape valid
-            if input_shape and len(input_shape) >= 2:
-                look_back = int(input_shape[1])
-                st.info(f"ℹ️ Model mendeteksi window size (look_back): {look_back} tahun")
-            else:
-                raise ValueError("Input shape tidak valid")
+def render_lstm_forecast(country, n_years=10):
+    df_lstm = ALL_DATA['lstm']
+    if df_lstm is None: return st.error("Data LSTM tidak ada.")
+    
+    try:
+        from tensorflow.keras.layers import LSTM
+        class FixedLSTM(LSTM):
+            def __init__(self, **kwargs):
+                if 'time_major' in kwargs: kwargs.pop('time_major')
+                super().__init__(**kwargs)
                 
-        except Exception as e:
-            st.warning(f"⚠️ Gagal membaca input shape otomatis ({e}). Menggunakan default: 3")
-            look_back = 3  # Nilai default fallback (sesuaikan jika perlu, misal 5)
-
-        # ---------------------------------------------------------
-        # 3. LOAD SCALERS
-        # ---------------------------------------------------------
-        try:
-            with open(scaler_path, "rb") as f:
-                scalers = pickle.load(f)
-            scaler_X = scalers["scaler_X"]
-            scaler_y = scalers["scaler_y"]
-        except Exception as e:
-            st.error(f"❌ Tidak dapat memuat 'scalers.pkl' → {e}")
-            st.stop()
-
-        # ---------------------------------------------------------
-        # 4. FILTER DATA NEGARA & PREDIKSI
-        # ---------------------------------------------------------
-        df_country = df_lstm[df_lstm["Country Name"] == selected_country].copy()
-        df_country = df_country.sort_values("Year")
-
-        values = df_country["log_Energy"].values
-
-        # Cek ketersediaan data (Error terjadi di sini sebelumnya)
+        model = load_model(model_path, custom_objects={'LSTM': FixedLSTM}, compile=False)
+        
+        with open(scaler_path, "rb") as f:
+            scalers = pickle.load(f)
+            
+        df_c = df_lstm[df_lstm["Country Name"] == country].sort_values("Year")
+        values = df_c["log_Energy"].values
+        look_back = int(model.input_shape[1])
+        
         if len(values) < look_back + 1:
-            st.error(f"❌ Data negara {selected_country} terlalu sedikit. Butuh minimal {look_back+1} tahun data.")
-            st.stop()
+            st.warning("Data historis kurang untuk prediksi.")
+            return
 
-        # --- Mulai Proses Prediksi Recursive ---
         last_seq = values[-look_back:]
-        future_preds = []
-
-        for _ in range(n_future):
-            # Reshape input sesuai yang diminta model
-            seq_scaled = scaler_X.transform(last_seq.reshape(1, -1)).reshape(1, look_back, 1)
+        preds = []
+        for _ in range(n_years):
+            seq_scaled = scalers["scaler_X"].transform(last_seq.reshape(1, -1)).reshape(1, look_back, 1)
+            p_scaled = model.predict(seq_scaled, verbose=0)
+            p = scalers["scaler_y"].inverse_transform(p_scaled)[0][0]
+            preds.append(p)
+            last_seq = np.append(last_seq[1:], p)
             
-            # Prediksi
-            pred_scaled = model.predict(seq_scaled, verbose=0)
-            pred = scaler_y.inverse_transform(pred_scaled)[0][0]
-
-            future_preds.append(pred)
-            # Update sequence (geser window)
-            last_seq = np.append(last_seq[1:], pred)
-
-        # ---------------------------------------------------------
-        # 5. TAMPILKAN HASIL
-        # ---------------------------------------------------------
-        future_years = list(range(int(df_country["Year"].max()) + 1,
-                                  int(df_country["Year"].max()) + 1 + n_future))
-
-        df_future = pd.DataFrame({
-            "Year": future_years,
-            "Predicted_log_Energy": future_preds,
-            "Predicted_Energy_kWh": [10**p - 1 for p in future_preds] # Reverse Log10
-        })
-
-        st.subheader("🔮 Hasil Prediksi")
-        st.dataframe(df_future)
-
-        # Grafik
-        st.subheader("📊 Grafik Prediksi")
+        future_years = list(range(int(df_c["Year"].max()) + 1, int(df_c["Year"].max()) + 1 + n_years))
+        y_pred_real = [10**p - 1 for p in preds]
+        
+        df_hist = df_c.tail(15)
+        
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df_future["Year"],
-            y=df_future["Predicted_Energy_kWh"],
-            mode="lines+markers",
-            name="Prediksi"
-        ))
-        fig.update_layout(xaxis_title="Tahun", yaxis_title="Energi (kWh)")
+        fig.add_trace(go.Scatter(x=df_hist['Year'], y=df_hist['Energy_Consumption_kWh'], name='Data Historis', line=dict(color='#1f77b4', width=3)))
+        
+        x_connect = [df_hist['Year'].iloc[-1]] + future_years
+        y_connect = [df_hist['Energy_Consumption_kWh'].iloc[-1]] + y_pred_real
+        
+        fig.add_trace(go.Scatter(x=x_connect, y=y_connect, name='Prediksi AI', line=dict(color='#ff7f0e', width=3, dash='dot')))
+        
+        fig.update_layout(title=f"Forecast Energi: {country} (+{n_years} Thn)", xaxis_title="Tahun", yaxis_title="kWh", height=350, margin=dict(l=0,r=0,t=40,b=0))
         st.plotly_chart(fig, use_container_width=True)
-
-        # ---------------------------------------------------------
-        # GRAFIK HISTORIS + PREDIKSI
-        # ---------------------------------------------------------
-        st.subheader("📈 Grafik Historis vs Prediksi")
-
-        df_hist = df_country[["Year", "Energy_Consumption_kWh"]].copy()
-        df_hist["Predicted"] = np.nan
-
-        df_merge = pd.concat([
-            df_hist,
-            pd.DataFrame({
-                "Year": df_future["Year"],
-                "Energy_Consumption_kWh": np.nan,
-                "Predicted": df_future["Predicted_Energy_kWh"]
-            })
-        ])
-
-        fig2 = go.Figure()
-
-        fig2.add_trace(go.Scatter(
-            x=df_hist["Year"], y=df_hist["Energy_Consumption_kWh"],
-            mode="lines+markers", name="Historis"
-        ))
-
-        fig2.add_trace(go.Scatter(
-            x=df_future["Year"], y=df_future["Predicted_Energy_kWh"],
-            mode="lines+markers", name="Prediksi"
-        ))
-
-        fig2.update_layout(
-            xaxis=dict(title="Tahun", tickformat="d"),
-            yaxis=dict(title="Energi (kWh)"),
-            height=420
-        )
-
-        st.plotly_chart(fig2, use_container_width=True)
-
-
-# --- HALAMAN 2: DEC (CLUSTERING) ---
-elif pilihan_menu == "🧩 Clustering (DEC)":
-    st.header("🧩 Segmentasi Negara (Deep Embedded Clustering)")
-    st.markdown("Analisis pengelompokan negara berdasarkan **GDP per Kapita** dan **Konsumsi Energi**.")
-    
-    # 1. Load Data
-    df_dec = load_dec_data()
-    
-    # 2. Filter Layout (DI TENGAH HALAMAN, BUKAN SIDEBAR)
-    with st.container():
-        st.subheader("⚙️ Filter Data")
         
-        col_f1, col_f2 = st.columns([2, 1]) # Kolom 1 lebih lebar untuk Slider
-        
-        with col_f1:
-            # Slider Tahun
-            min_year = int(df_dec['Year'].min())
-            max_year = int(df_dec['Year'].max())
-            selected_year = st.slider("Pilih Tahun Analisis:", min_year, max_year, max_year)
-            
-        with col_f2:
-            # Dropdown Negara
-            country_list = sorted(df_dec['Country Name'].unique())
-            default_ix = country_list.index('Indonesia') if 'Indonesia' in country_list else 0
-            selected_country = st.selectbox("Pilih Negara untuk Detail:", country_list, index=default_ix)
+    except Exception as e:
+        st.error(f"Gagal memuat model forecasting: {e}")
 
-    # Filter Dataframe
-    df_year = df_dec[df_dec['Year'] == selected_year]
+# -------------------------------------------------------------------------
+# 4. HALAMAN UTAMA (EXECUTIVE DASHBOARD)
+# -------------------------------------------------------------------------
+if mode_analisis == "📊 Executive Dashboard":
+    st.title(f"📊 Dashboard Analisis: {selected_country}")
     
-    # --- LAYOUT VISUALISASI ---
+    # --- BARIS 1: KEY METRICS ---
+    metrics = get_country_metrics(selected_country, year=selected_year)
+    
+    if metrics is not None:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("GDP per Kapita", f"${metrics['GDP_per_Capita']:,.0f}", delta_color="normal")
+        c2.metric("Konsumsi Energi", f"{metrics['Energy_Consumption_kWh']:,.0f} kWh", delta_color="normal")
+        
+        status_label = metrics['Cluster Label']
+        status_color = "#4ECDC4" if "High" in status_label else "#FF6B6B"
+        c3.markdown(f"**Status Ekonomi-Energi**\n\n<span style='color:{status_color}; font-weight:bold; font-size:1.2em'>{status_label}</span>", unsafe_allow_html=True)
+        
+        g_res = "Data Tidak Tersedia"
+        if ALL_DATA['granger'] is not None:
+            dg = ALL_DATA['granger']
+            row_g = dg[dg['Country'] == selected_country]
+            if not row_g.empty:
+                g_res = row_g.iloc[0]['Hypothesis']
+        c4.markdown(f"**Hubungan Kausalitas**\n\n{g_res}")
+    else:
+        st.warning(f"⚠️ **Data Tidak Tersedia**: Data {selected_country} untuk tahun {selected_year} kosong. Metrik tidak dapat ditampilkan.")
+        st.caption("💡 Tips: Coba geser 'Slider Tahun' di sidebar ke tahun-tahun sebelumnya.")
+
     st.markdown("---")
+
+    # --- BARIS 2: FORECASTING & GEOSPATIAL ---
+    col_left, col_right = st.columns([1.5, 1])
     
-    # A. PETA DUNIA
-    st.subheader(f"🗺️ Peta Persebaran Kluster ({selected_year})")
+    with col_left:
+        df_lstm = ALL_DATA['lstm']
+        df_c = df_lstm[df_lstm["Country Name"] == selected_country]
+        if df_c.empty:
+            st.warning(f"⚠️ Data historis untuk Forecasting {selected_country} tidak ditemukan.")
+        else:
+            render_lstm_forecast(selected_country, n_years=10)
+        
+    with col_right:
+        st.subheader("📍 Posisi & Peta Global")
+        
+        tab_map, tab_scatter = st.tabs(["🗺️ Peta Dunia", "🔍 Scatter Plot"])
+        
+        df_dec = ALL_DATA['dec']
+        if df_dec is not None:
+            df_curr = df_dec[df_dec['Year'] == selected_year]
+            hl = df_curr[df_curr['Country Name'] == selected_country]
+            is_missing = hl.empty
+            
+            with tab_map:
+                if is_missing:
+                    st.warning(f"⚠️ Peta tahun {selected_year} tidak mencakup data {selected_country}.")
+                fig_map = px.choropleth(
+                    df_curr, locations="Country Name", locationmode="country names", color="Cluster Label",
+                    color_discrete_map={'Low Economy - Low Energy': '#FF6B6B', 'High Economy - High Energy': '#4ECDC4'},
+                    hover_name="Country Name", title=f"Peta Sebaran ({selected_year})"
+                )
+                fig_map.update_layout(height=350, margin=dict(l=0,r=0,t=30,b=0), showlegend=False, geo=dict(showframe=False, showcoastlines=False, projection_type='natural earth'))
+                st.plotly_chart(fig_map, use_container_width=True)
+
+            with tab_scatter:
+                if is_missing:
+                    st.warning(f"⚠️ Posisi statistik {selected_country} thn {selected_year} tidak diketahui.")
+                fig_pos = px.scatter(
+                    df_curr, x="log_GDP_per_Capita", y="log_Energy", color="Cluster Label",
+                    color_discrete_map={'Low Economy - Low Energy': '#FF6B6B', 'High Economy - High Energy': '#4ECDC4'},
+                    hover_name="Country Name", title=f"Posisi Statistik ({selected_year})"
+                )
+                if not is_missing:
+                    fig_pos.add_trace(go.Scatter(
+                        x=hl['log_GDP_per_Capita'], y=hl['log_Energy'], mode='markers',
+                        marker=dict(size=25, color='yellow', symbol='star', line=dict(width=2, color='black')), 
+                        name=selected_country, showlegend=False
+                    ))
+                fig_pos.update_layout(height=350, margin=dict(l=0,r=0,t=30,b=0), showlegend=False)
+                st.plotly_chart(fig_pos, use_container_width=True)
+
+# -------------------------------------------------------------------------
+# 5. HALAMAN DETAIL: FORECASTING (LSTM)
+# -------------------------------------------------------------------------
+elif mode_analisis == "📈 Detail: Forecasting":
+    st.header(f"📈 Analisis Forecasting Mendalam: {selected_country}")
     
-    color_map = {
-        'Low Economy - Low Energy': '#FF6B6B',  # Merah
-        'High Economy - High Energy': '#4ECDC4' # Cyan
-    }
+    df_lstm = ALL_DATA['lstm']
+    df_c = df_lstm[df_lstm["Country Name"] == selected_country].sort_values("Year")
+    
+    if df_c.empty:
+        st.error(f"❌ Data historis (LSTM) untuk negara **{selected_country}** sama sekali tidak ditemukan.")
+        st.stop()
+        
+    last_year_data = int(df_c['Year'].max())
+    if last_year_data < selected_year:
+        st.warning(f"⚠️ Data historis terakhir **{selected_country}** adalah tahun **{last_year_data}**.")
+    
+    n_input = st.slider("Jumlah Tahun Prediksi:", 1, 30, 10)
+    render_lstm_forecast(selected_country, n_years=n_input)
+    st.subheader("📄 Data Historis")
+    st.dataframe(df_c[['Year', 'Energy_Consumption_kWh', 'log_Energy']].sort_values('Year', ascending=False), use_container_width=True)
+
+# -------------------------------------------------------------------------
+# 6. HALAMAN DETAIL: CLUSTERING (DEC)
+# -------------------------------------------------------------------------
+elif mode_analisis == "🧩 Detail: Clustering":
+    st.header(f"🧩 Peta Segmentasi Global ({selected_year})")
+    
+    df_dec = ALL_DATA['dec']
+    df_year = df_dec[df_dec['Year'] == selected_year]
+    hl = df_year[df_year['Country Name'] == selected_country]
+    
+    if hl.empty:
+        st.warning(f"⚠️ **Data Kosong:** Negara **{selected_country}** tidak memiliki data clustering pada tahun **{selected_year}**.")
+    else:
+        st.success(f"✅ Menampilkan posisi **{selected_country}** pada tahun **{selected_year}**.")
     
     fig_map = px.choropleth(
-        df_year,
-        locations="Country Name",
-        locationmode="country names",
-        color="Cluster Label",
-        hover_name="Country Name",
-        hover_data={
-            "GDP_per_Capita": ":.2f", 
-            "Energy_Consumption_kWh": ":.2f",
-            "Cluster": False,
-            "Country Name": False
-        },
-        color_discrete_map=color_map,
-        projection="natural earth",
-        title=f"Global Clustering: Ekonomi vs Energi ({selected_year})"
+        df_year, locations="Country Name", locationmode="country names", color="Cluster Label",
+        color_discrete_map={'Low Economy - Low Energy': '#FF6B6B', 'High Economy - High Energy': '#4ECDC4'},
+        title="Peta Distribusi Cluster", projection="natural earth"
     )
-    fig_map.update_layout(margin={"r":0,"t":30,"l":0,"b":0}, height=450)
     st.plotly_chart(fig_map, use_container_width=True)
     
-    # B. DETAIL NEGARA & SCATTER PLOT
-    col_kiri, col_kanan = st.columns([1, 2])
-    
-    with col_kiri:
-        st.subheader(f"📊 Detail: {selected_country}")
-        
-        country_data = df_year[df_year['Country Name'] == selected_country]
-        
-        if not country_data.empty:
-            row = country_data.iloc[0]
-            label = row['Cluster Label']
-            
-            if "High" in label:
-                st.success(f"**Status:** {label}")
-                desc = "Negara ini memiliki tingkat ekonomi dan konsumsi energi yang **Tinggi**."
-            else:
-                st.warning(f"**Status:** {label}")
-                desc = "Negara ini memiliki tingkat ekonomi dan konsumsi energi yang **Rendah/Berkembang**."
-            
-            st.markdown(desc)
-            
-            m1, m2 = st.columns(2)
-            m1.metric("GDP/Kapita", f"${row['GDP_per_Capita']:,.0f}")
-            m2.metric("Energi/Kapita", f"{row['Energy_Consumption_kWh']:,.0f} kWh")
-            
-            st.caption(f"Log-Scale: GDP={row['log_GDP_per_Capita']:.2f}, Energi={row['log_Energy']:.2f}")
-        else:
-            st.error(f"Data untuk {selected_country} pada tahun {selected_year} tidak tersedia.")
+    st.subheader("🔍 Analisis Posisi")
+    fig_sc = px.scatter(
+        df_year, x="log_GDP_per_Capita", y="log_Energy", color="Cluster Label",
+        hover_name="Country Name", color_discrete_map={'Low Economy - Low Energy': '#FF6B6B', 'High Economy - High Energy': '#4ECDC4'}
+    )
+    if not hl.empty:
+        fig_sc.add_trace(go.Scatter(
+            x=hl['log_GDP_per_Capita'], y=hl['log_Energy'], mode='markers',
+            marker=dict(size=25, color='yellow', symbol='star', line=dict(width=2, color='black')),
+            text=[selected_country], textposition="top center", name=selected_country
+        ))
+    st.plotly_chart(fig_sc, use_container_width=True)
 
-    with col_kanan:
-        st.subheader("📈 Posisi dalam Cluster (Scatter Plot)")
-        
-        fig_scatter = px.scatter(
-            df_year,
-            x="log_GDP_per_Capita",
-            y="log_Energy",
-            color="Cluster Label",
-            hover_name="Country Name",
-            color_discrete_map=color_map,
-            title=f"Sebaran Negara (Log Scale) - {selected_year}",
-            labels={
-                "log_GDP_per_Capita": "Log GDP per Capita",
-                "log_Energy": "Log Energy Consumption"
-            }
-        )
-        
-        # Highlight Negara Terpilih
-        highlight = df_year[df_year['Country Name'] == selected_country]
-        if not highlight.empty:
-            fig_scatter.add_scatter(
-                x=highlight['log_GDP_per_Capita'],
-                y=highlight['log_Energy'],
-                mode='markers+text',
-                marker=dict(size=15, color='black', symbol='circle-open', line=dict(width=3)),
-                text=[selected_country],
-                textposition="top center",
-                name="Pilihan"
-            )
-
-        st.plotly_chart(fig_scatter, use_container_width=True)
-
-# --- HALAMAN 3: GRANGER CAUSALITY (METODE ANDA) ---
-elif pilihan_menu == "🔗 Kausalitas (Granger)":
+# -------------------------------------------------------------------------
+# 7. HALAMAN DETAIL: KAUSALITAS (GRANGER) - DENGAN LAYOUT BARU
+# -------------------------------------------------------------------------
+elif mode_analisis == "🔗 Detail: Kausalitas":
     st.header("🔗 Analisis Kausalitas Energi & Ekonomi")
     st.subheader("Metode: Granger Causality Test")
     st.markdown("Menentukan arah hubungan: **Apakah Energi mendorong Ekonomi, atau sebaliknya?**")
     
+    # Penjelasan Metodologi
+    st.info("""
+    ℹ️ **Catatan:** Hasil Granger menggunakan seluruh data historis (Time Series) jangka panjang. 
+    Filter 'Tahun' di sidebar tidak mempengaruhi hasil analisis ini.
+    """)
+    
     # 1. Load Data Granger
-    df_granger = load_granger_data()
+    df_granger = ALL_DATA['granger']
     
     if df_granger is None:
         st.error("⚠️ File 'granger_result_final.csv' tidak ditemukan.")
-        st.warning("Harap jalankan script analisis Granger terlebih dahulu untuk menghasilkan data.")
+        st.warning("Harap jalankan script analisis Granger terlebih dahulu.")
     else:
-        # Layout: Kiri (Pilih Negara & Info), Kanan (Peta)
+        # Filter Negara (Menggunakan Global State 'selected_country')
+        country_data_df = df_granger[df_granger['Country'] == selected_country]
+        
+        # Layout 1:2 (Kiri: Info, Kanan: Peta)
         col_kiri, col_kanan = st.columns([1, 2])
         
         with col_kiri:
-            st.markdown("### 🔍 Cek Negara")
-            daftar_negara = sorted(df_granger['Country'].unique())
-            selected_country = st.selectbox("Pilih Negara:", daftar_negara)
-            
-            # Ambil Data Negara
-            country_data = df_granger[df_granger['Country'] == selected_country].iloc[0]
-            hasil = country_data['Hypothesis']
-            
+            st.markdown(f"### 🔍 Hasil: {selected_country}")
             st.divider()
-            st.markdown(f"**Hasil Analisis: {selected_country}**")
             
-            # Tampilan Kartu Hasil
-            if hasil == 'Neutrality':
-                st.info(f"🟦 **{hasil}**")
-                st.caption("Tidak ada hubungan sebab-akibat langsung dalam jangka pendek.")
-            elif hasil == 'Growth Hypothesis':
-                st.success(f"🟩 **{hasil}**")
-                st.caption("Energi mendorong Pertumbuhan Ekonomi.")
-            elif hasil == 'Conservation Hypothesis':
-                st.warning(f"🟨 **{hasil}**")
-                st.caption("Pertumbuhan Ekonomi mendorong Konsumsi Energi.")
-            else:
-                st.error(f"🟪 **{hasil}**")
-                st.caption("Saling mempengaruhi (Feedback).")
+            if not country_data_df.empty:
+                country_data = country_data_df.iloc[0]
+                hasil = country_data['Hypothesis']
                 
-            st.markdown("---")
-            st.write("**Statistik (P-Value):**")
-            st.write(f"Energi → GDP: `{country_data['P_Val_Energy_to_GDP']}`")
-            st.write(f"GDP → Energi: `{country_data['P_Val_GDP_to_Energy']}`")
+                # Tampilan Kartu Hasil (Menggunakan Code Anda)
+                if hasil == 'Neutrality':
+                    st.info(f"🟦 **{hasil}**")
+                    st.caption("Tidak ada hubungan sebab-akibat langsung dalam jangka pendek.")
+                elif hasil == 'Growth Hypothesis':
+                    st.success(f"🟩 **{hasil}**")
+                    st.caption("Energi mendorong Pertumbuhan Ekonomi.")
+                elif hasil == 'Conservation Hypothesis':
+                    st.warning(f"🟨 **{hasil}**")
+                    st.caption("Pertumbuhan Ekonomi mendorong Konsumsi Energi.")
+                else:
+                    st.error(f"🟪 **{hasil}**")
+                    st.caption("Saling mempengaruhi (Feedback).")
+                    
+                st.markdown("---")
+                st.write("**Statistik (P-Value):**")
+                st.write(f"Energi → GDP: `{country_data['P_Val_Energy_to_GDP']:.4f}`")
+                st.write(f"GDP → Energi: `{country_data['P_Val_GDP_to_Energy']:.4f}`")
+            else:
+                 st.warning(f"""
+                ⚠️ **Data Tidak Ditemukan:** Tidak ada hasil uji Granger untuk negara **{selected_country}**.
+                Mungkin data historis terlalu pendek.
+                """)
         
         with col_kanan:
             st.markdown("### 🗺️ Peta Persebaran Global")
-            # Membuat Peta Choropleth
+            # Membuat Peta Choropleth (Code Anda)
             fig = px.choropleth(
                 df_granger,
                 locations="Country",
@@ -524,189 +428,3 @@ elif pilihan_menu == "🔗 Kausalitas (Granger)":
             )
             fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
             st.plotly_chart(fig, use_container_width=True)
-
-# --- HALAMAN 4: Deep Forest (Klasifikasi) ---
-elif pilihan_menu == "🌲 Klasifikasi (Deep Forest)":
-    st.markdown('<div class="main-header"><h2>🌲 Deep Forest Validation Core</h2><p>Validasi Klasifikasi menggunakan Label dari Clustering (DEC)</p></div>', unsafe_allow_html=True)
-    
-    # 1. LOAD DATA REAL (Hasil Clustering Anda)
-    df_df = load_dec_data() # Menggunakan fungsi load yang sama dengan menu Clustering
-    
-    if df_df is None or df_df.empty:
-        st.error("Data 'clustered_data_dec.csv' tidak ditemukan. Jalankan clustering terlebih dahulu.")
-        st.stop()
-
-    # Persiapan Data untuk Model
-    X = df_df[['log_GDP_per_Capita', 'log_Energy']].values # Konversi ke numpy array
-    y = df_df['Cluster'].values
-
-    # ------------------------------------------------------------------
-    # MODIFIKASI: GUNAKAN DEEP FOREST (DENGAN BACKUP RANDOM FOREST)
-    # ------------------------------------------------------------------
-    from sklearn.metrics import accuracy_score, confusion_matrix
-    
-    try:
-        # 1. Coba Import Deep Forest
-        from deep_forest import CascadeForestClassifier
-        
-        # Inisialisasi Deep Forest
-        clf = CascadeForestClassifier(random_state=42, verbose=0)
-        model_status = "✅ Menggunakan Deep Forest (Cascade Layer)"
-        
-    except ImportError:
-        # 2. Jika Gagal (Library tidak ada), gunakan Random Forest
-        from sklearn.ensemble import RandomForestClassifier
-        
-        clf = RandomForestClassifier(n_estimators=100, random_state=42)
-        model_status = "⚠️ Deep Forest tidak terinstall. Menggunakan Random Forest sebagai simulasi."
-        
-    # Tampilkan Status Model yang Dipakai
-    # if "Menggunakan Deep Forest" in model_status:
-    #     st.success(model_status)
-    # else:
-    #     st.warning(model_status)
-
-    # Train Model (On-the-fly dengan data 2 cluster Anda)
-    clf.fit(X, y)
-    y_pred = clf.predict(X)
-    
-    # Deep Forest kadang mengembalikan array 2D, kita ratakan jika perlu
-    if len(y_pred.shape) > 1:
-        y_pred = y_pred.flatten()
-        
-    acc = accuracy_score(y, y_pred)
-
-    # ------------------------------------------------------------------
-    # VISUALISASI (Sama seperti code Anda, disesuaikan sedikit)
-    # ------------------------------------------------------------------
-    
-    # Membuat 4 Tab Navigasi
-    tab_geo, tab_bound, tab_perf, tab_sim = st.tabs(["🗺️ Peta Klasifikasi", "🧠 Decision Boundary", "🎯 Validasi Matriks", "🤖 Simulator"])
-    
-    # --- TAB 1: PETA GEOSPASIAL (REAL DATA) ---
-    with tab_geo:
-        st.markdown("### 🌍 Peta Hasil Klasifikasi")
-        
-        max_year = df_df['Year'].max()
-        df_map = df_df[df_df['Year'] == max_year].copy()
-        
-        # Prediksi ulang untuk peta
-        X_map = df_map[['log_GDP_per_Capita', 'log_Energy']].values
-        pred_map = clf.predict(X_map)
-        
-        if len(pred_map.shape) > 1: pred_map = pred_map.flatten()
-        
-        df_map['Predicted_Label'] = pred_map
-        df_map['Label_Text'] = df_map['Predicted_Label'].map({
-            0: 'Low Economy - Low Energy', 
-            1: 'High Economy - High Energy'
-        })
-        
-        color_map = {
-            'Low Economy - Low Energy': '#FF6B6B', 
-            'High Economy - High Energy': '#4ECDC4'
-        }
-
-        fig_map = px.choropleth(
-            df_map, 
-            locations="Country Name", 
-            locationmode="country names",
-            color="Label_Text", 
-            hover_name="Country Name", 
-            hover_data=["GDP_per_Capita", "Energy_Consumption_kWh"], 
-            color_discrete_map=color_map, 
-            projection="natural earth", 
-            title=f"Peta Klasifikasi Global (Tahun {max_year})"
-        )
-        fig_map.update_layout(height=500, margin={"r":0,"t":40,"l":0,"b":0})
-        st.plotly_chart(fig_map, use_container_width=True)
-        
-    # --- TAB 2: BATAS KEPUTUSAN ---
-    with tab_bound:
-        st.markdown("### 🧠 Decision Boundary Landscape")
-        st.write("Visualisasi bagaimana model memisahkan Cluster (Low vs High).")
-        
-        # Meshgrid
-        x_min, x_max = df_df['log_GDP_per_Capita'].min() - 0.5, df_df['log_GDP_per_Capita'].max() + 0.5
-        y_min, y_max = df_df['log_Energy'].min() - 0.5, df_df['log_Energy'].max() + 0.5
-        xx, yy = np.meshgrid(np.arange(x_min, x_max, 0.1),
-                             np.arange(y_min, y_max, 0.1))
-        
-        # Prediksi area
-        mesh_input = np.c_[xx.ravel(), yy.ravel()]
-        Z = clf.predict(mesh_input)
-        if len(Z.shape) > 1: Z = Z.flatten()
-        Z = Z.reshape(xx.shape)
-        
-        fig_contour = go.Figure()
-        
-        # Kontur
-        fig_contour.add_trace(go.Contour(
-            z=Z, x=np.arange(x_min, x_max, 0.1), y=np.arange(y_min, y_max, 0.1),
-            colorscale=[[0, '#FF6B6B'], [1, '#4ECDC4']],
-            opacity=0.3, showscale=False
-        ))
-        
-        # Scatter Data Asli
-        fig_contour.add_trace(go.Scatter(
-            x=df_df['log_GDP_per_Capita'], y=df_df['log_Energy'],
-            mode='markers',
-            marker=dict(color=y, colorscale=[[0, 'red'], [1, 'teal']], showscale=False),
-            name='Data Negara'
-        ))
-        
-        fig_contour.update_layout(
-            title="Decision Boundary",
-            xaxis_title="Log GDP per Capita",
-            yaxis_title="Log Energy Consumption"
-        )
-        st.plotly_chart(fig_contour, use_container_width=True)
-        
-    # --- TAB 3: VALIDASI PERFORMA ---
-    with tab_perf:
-        st.markdown("### 🎯 Performa Model")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            cm = confusion_matrix(y, y_pred)
-            fig_cm = px.imshow(
-                cm, 
-                x=['Pred: Low', 'Pred: High'], 
-                y=['Act: Low', 'Act: High'], 
-                color_continuous_scale='Blues', 
-                text_auto=True, 
-                title="Confusion Matrix"
-            )
-            st.plotly_chart(fig_cm, use_container_width=True)
-        
-        with col2:
-            st.metric("Akurasi Model", f"{acc*100:.2f}%")
-            st.info("Akurasi dihitung dengan membandingkan prediksi model terhadap Label Cluster DEC.")
-            
-    # --- TAB 4: SIMULATOR ---
-    with tab_sim:
-        st.markdown("### 🤖 Simulator Prediksi")
-        
-        with st.form("sim"):
-            c1, c2 = st.columns(2)
-            gdp_input = c1.number_input("GDP per Capita (USD)", 100, 100000, 5000)
-            ene_input = c2.number_input("Energy Consumption (kWh)", 100, 50000, 2000)
-            
-            if st.form_submit_button("Prediksi Kategori"):
-                log_gdp = np.log10(gdp_input)
-                log_ene = np.log10(ene_input)
-                
-                # Prediksi
-                pred_raw = clf.predict([[log_gdp, log_ene]])
-                if len(pred_raw.shape) > 1: pred_raw = pred_raw.flatten()
-                pred_result = pred_raw[0]
-                
-                label_res = "High Economy - High Energy" if pred_result == 1 else "Low Economy - Low Energy"
-                bg_color = "#4ECDC4" if pred_result == 1 else "#FF6B6B"
-                
-                st.markdown(f"""
-                <div style='background-color: {bg_color}; padding: 20px; border-radius: 10px; text-align: center; color: white;'>
-                    <h2>{label_res}</h2>
-                    <p>Log GDP: {log_gdp:.2f} | Log Energy: {log_ene:.2f}</p>
-                </div>
-                """, unsafe_allow_html=True)
