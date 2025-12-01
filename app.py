@@ -188,25 +188,51 @@ elif pilihan_menu == "📈 Forecasting (LSTM)":
     if run_btn:
 
         # ---------------------------------------------------------
-        # LOAD MODEL
+        # 1. LOAD MODEL (Dengan Fix LSTM & compile=False)
         # ---------------------------------------------------------
         try:
-            model = load_model(model_path)
-            st.success("Model LSTM berhasil dimuat!")
+            from tensorflow.keras.layers import LSTM
+
+            # Wrapper untuk mengatasi error 'time_major'
+            class FixedLSTM(LSTM):
+                def __init__(self, **kwargs):
+                    if 'time_major' in kwargs:
+                        kwargs.pop('time_major')
+                    super().__init__(**kwargs)
+
+            # Load model tanpa compile (mengatasi error metrics)
+            model = load_model(
+                model_path, 
+                custom_objects={'LSTM': FixedLSTM},
+                compile=False 
+            )
+            st.success("✅ Model LSTM berhasil dimuat!")
+            
         except Exception as e:
             st.error(f"❌ Tidak dapat memuat model 'model.h5' → {e}")
             st.stop()
 
-        # Ambil look_back dari bentuk input model
+        # ---------------------------------------------------------
+        # 2. TENTUKAN LOOK_BACK (Bagian yang Hilang)
+        # ---------------------------------------------------------
         try:
-            look_back = int(model.input_shape[1])
-            st.info(f"Model menggunakan data historis {look_back} tahun terakhir")
-        except:
-            st.error("Tidak bisa membaca input shape model.")
-            st.stop()
+            # Mencoba mengambil look_back dari arsitektur model
+            # Input shape biasanya format: (None, look_back, n_features)
+            input_shape = model.input_shape
+            
+            # Cek apakah input_shape valid
+            if input_shape and len(input_shape) >= 2:
+                look_back = int(input_shape[1])
+                st.info(f"ℹ️ Model mendeteksi window size (look_back): {look_back} tahun")
+            else:
+                raise ValueError("Input shape tidak valid")
+                
+        except Exception as e:
+            st.warning(f"⚠️ Gagal membaca input shape otomatis ({e}). Menggunakan default: 3")
+            look_back = 3  # Nilai default fallback (sesuaikan jika perlu, misal 5)
 
         # ---------------------------------------------------------
-        # LOAD SCALERS
+        # 3. LOAD SCALERS
         # ---------------------------------------------------------
         try:
             with open(scaler_path, "rb") as f:
@@ -218,33 +244,36 @@ elif pilihan_menu == "📈 Forecasting (LSTM)":
             st.stop()
 
         # ---------------------------------------------------------
-        # FILTER DATA NEGARA
+        # 4. FILTER DATA NEGARA & PREDIKSI
         # ---------------------------------------------------------
         df_country = df_lstm[df_lstm["Country Name"] == selected_country].copy()
         df_country = df_country.sort_values("Year")
 
         values = df_country["log_Energy"].values
 
+        # Cek ketersediaan data (Error terjadi di sini sebelumnya)
         if len(values) < look_back + 1:
-            st.error("Data negara terlalu sedikit untuk prediksi.")
+            st.error(f"❌ Data negara {selected_country} terlalu sedikit. Butuh minimal {look_back+1} tahun data.")
             st.stop()
 
-        # ---------------------------------------------------------
-        # PREDIKSI RECURSIVE
-        # ---------------------------------------------------------
+        # --- Mulai Proses Prediksi Recursive ---
         last_seq = values[-look_back:]
         future_preds = []
 
         for _ in range(n_future):
+            # Reshape input sesuai yang diminta model
             seq_scaled = scaler_X.transform(last_seq.reshape(1, -1)).reshape(1, look_back, 1)
+            
+            # Prediksi
             pred_scaled = model.predict(seq_scaled, verbose=0)
             pred = scaler_y.inverse_transform(pred_scaled)[0][0]
 
             future_preds.append(pred)
+            # Update sequence (geser window)
             last_seq = np.append(last_seq[1:], pred)
 
         # ---------------------------------------------------------
-        # SIAPKAN DATA OUTPUT
+        # 5. TAMPILKAN HASIL
         # ---------------------------------------------------------
         future_years = list(range(int(df_country["Year"].max()) + 1,
                                   int(df_country["Year"].max()) + 1 + n_future))
@@ -252,19 +281,14 @@ elif pilihan_menu == "📈 Forecasting (LSTM)":
         df_future = pd.DataFrame({
             "Year": future_years,
             "Predicted_log_Energy": future_preds,
-            "Predicted_Energy_kWh": [10**p - 1 for p in future_preds]
+            "Predicted_Energy_kWh": [10**p - 1 for p in future_preds] # Reverse Log10
         })
 
-        # ---------------------------------------------------------
-        # TAMPILKAN TABEL
-        # ---------------------------------------------------------
         st.subheader("🔮 Hasil Prediksi")
         st.dataframe(df_future)
 
-        # ---------------------------------------------------------
-        # GRAFIK PREDIKSI SAJA (FIX FORMAT TAHUN)
-        # ---------------------------------------------------------
-        st.subheader("📊 Grafik Prediksi Energi di Masa Depan")
+        # Grafik
+        st.subheader("📊 Grafik Prediksi")
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=df_future["Year"],
@@ -272,13 +296,7 @@ elif pilihan_menu == "📈 Forecasting (LSTM)":
             mode="lines+markers",
             name="Prediksi"
         ))
-
-        fig.update_layout(
-            xaxis=dict(title="Tahun", tickformat="d"),
-            yaxis=dict(title="Energi (kWh)"),
-            height=400
-        )
-
+        fig.update_layout(xaxis_title="Tahun", yaxis_title="Energi (kWh)")
         st.plotly_chart(fig, use_container_width=True)
 
         # ---------------------------------------------------------
