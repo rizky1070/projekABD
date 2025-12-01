@@ -2,6 +2,18 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
+import tensorflow as tf
+from tensorflow.keras.models import load_model
+from sklearn.preprocessing import MinMaxScaler
+import os
+import pickle
+import warnings
+warnings.filterwarnings("ignore")
+
+base_path = os.path.dirname(os.path.abspath(__file__))
+model_path = os.path.join(base_path, "model.h5")
+scaler_path = os.path.join(base_path, "scalers.pkl")
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(
@@ -84,6 +96,17 @@ def load_granger_data():
         return pd.read_csv('granger_result_final.csv')
     except FileNotFoundError:
         return None
+    
+# ----Fungsi load data lstm---------
+@st.cache_data
+def load_lstm_data():
+    try:
+        df = pd.read_csv("data_bersih.csv")
+        df["log_Energy"] = np.log10(df["Energy_Consumption_kWh"] + 1)
+        return df
+    except:
+        st.error("❌ File 'data_bersih.csv' tidak ditemukan!")
+        return None
 
 # --- SIDEBAR MENU (RADIO BUTTON) ---
 st.sidebar.title("Navigasi Sistem")
@@ -128,29 +151,160 @@ if pilihan_menu == "🏠 Beranda":
 
 # --- HALAMAN 1: LSTM (Forecasting) ---
 elif pilihan_menu == "📈 Forecasting (LSTM)":
-    st.header("📈 Peramalan Deret Waktu (Time Series Forecasting)")
-    st.subheader("Metode: Long Short-Term Memory (LSTM)")
-    st.write("Model ini memprediksi konsumsi energi masa depan berdasarkan pola historis.")
-    
-    # Input User
-    with st.container():
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            n_years = st.number_input("Prediksi berapa tahun ke depan?", min_value=1, max_value=10, value=5)
-            run_btn = st.button("Jalankan Prediksi LSTM")
-        
-        with col2:
-            if run_btn:
-                # TODO: Masukkan logika load model LSTM dan prediksi di sini
-                st.success(f"Memproses prediksi untuk {n_years} tahun ke depan...")
-                
-                # Placeholder Grafik Dummy
-                chart_data = pd.DataFrame(
-                    np.random.randn(20, 3),
-                    columns=['Aktual', 'Prediksi', 'Baseline']
-                )
-                st.line_chart(chart_data)
-                st.caption("Grafik: Perbandingan Data Aktual vs Prediksi Model LSTM")
+
+    st.header("📈 Peramalan Konsumsi Energi (LSTM)")
+
+    df_lstm = load_lstm_data()
+    if df_lstm is None or df_lstm.empty:
+        st.stop()
+
+    # PILIH NEGARA
+    countries = sorted(df_lstm["Country Name"].unique())
+    default_idx = countries.index("Indonesia") if "Indonesia" in countries else 0
+    selected_country = st.selectbox("Pilih Negara:", countries, index=default_idx)
+
+    # PARAMETER INPUT (look_back DIHILANGKAN)
+    colA, colB = st.columns(2)
+    with colA:
+        n_future = st.number_input("Prediksi berapa tahun ke depan?", 1, 25, 10)
+    with colB:
+        run_btn = st.button("🔮 Jalankan Prediksi")
+
+    st.markdown("---")
+
+    if run_btn:
+
+        # ---------------------------------------------------------
+        # LOAD MODEL
+        # ---------------------------------------------------------
+        try:
+            model = load_model(model_path)
+            st.success("Model LSTM berhasil dimuat!")
+        except Exception as e:
+            st.error(f"❌ Tidak dapat memuat model 'model.h5' → {e}")
+            st.stop()
+
+        # Ambil look_back dari bentuk input model
+        try:
+            look_back = int(model.input_shape[1])
+            st.info(f"Model menggunakan data historis {look_back} tahun terakhir")
+        except:
+            st.error("Tidak bisa membaca input shape model.")
+            st.stop()
+
+        # ---------------------------------------------------------
+        # LOAD SCALERS
+        # ---------------------------------------------------------
+        try:
+            with open(scaler_path, "rb") as f:
+                scalers = pickle.load(f)
+            scaler_X = scalers["scaler_X"]
+            scaler_y = scalers["scaler_y"]
+        except Exception as e:
+            st.error(f"❌ Tidak dapat memuat 'scalers.pkl' → {e}")
+            st.stop()
+
+        # ---------------------------------------------------------
+        # FILTER DATA NEGARA
+        # ---------------------------------------------------------
+        df_country = df_lstm[df_lstm["Country Name"] == selected_country].copy()
+        df_country = df_country.sort_values("Year")
+
+        values = df_country["log_Energy"].values
+
+        if len(values) < look_back + 1:
+            st.error("Data negara terlalu sedikit untuk prediksi.")
+            st.stop()
+
+        # ---------------------------------------------------------
+        # PREDIKSI RECURSIVE
+        # ---------------------------------------------------------
+        last_seq = values[-look_back:]
+        future_preds = []
+
+        for _ in range(n_future):
+            seq_scaled = scaler_X.transform(last_seq.reshape(1, -1)).reshape(1, look_back, 1)
+            pred_scaled = model.predict(seq_scaled, verbose=0)
+            pred = scaler_y.inverse_transform(pred_scaled)[0][0]
+
+            future_preds.append(pred)
+            last_seq = np.append(last_seq[1:], pred)
+
+        # ---------------------------------------------------------
+        # SIAPKAN DATA OUTPUT
+        # ---------------------------------------------------------
+        future_years = list(range(int(df_country["Year"].max()) + 1,
+                                  int(df_country["Year"].max()) + 1 + n_future))
+
+        df_future = pd.DataFrame({
+            "Year": future_years,
+            "Predicted_log_Energy": future_preds,
+            "Predicted_Energy_kWh": [10**p - 1 for p in future_preds]
+        })
+
+        # ---------------------------------------------------------
+        # TAMPILKAN TABEL
+        # ---------------------------------------------------------
+        st.subheader("🔮 Hasil Prediksi")
+        st.dataframe(df_future)
+
+        # ---------------------------------------------------------
+        # GRAFIK PREDIKSI SAJA (FIX FORMAT TAHUN)
+        # ---------------------------------------------------------
+        st.subheader("📊 Grafik Prediksi Energi di Masa Depan")
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df_future["Year"],
+            y=df_future["Predicted_Energy_kWh"],
+            mode="lines+markers",
+            name="Prediksi"
+        ))
+
+        fig.update_layout(
+            xaxis=dict(title="Tahun", tickformat="d"),
+            yaxis=dict(title="Energi (kWh)"),
+            height=400
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ---------------------------------------------------------
+        # GRAFIK HISTORIS + PREDIKSI
+        # ---------------------------------------------------------
+        st.subheader("📈 Grafik Historis vs Prediksi")
+
+        df_hist = df_country[["Year", "Energy_Consumption_kWh"]].copy()
+        df_hist["Predicted"] = np.nan
+
+        df_merge = pd.concat([
+            df_hist,
+            pd.DataFrame({
+                "Year": df_future["Year"],
+                "Energy_Consumption_kWh": np.nan,
+                "Predicted": df_future["Predicted_Energy_kWh"]
+            })
+        ])
+
+        fig2 = go.Figure()
+
+        fig2.add_trace(go.Scatter(
+            x=df_hist["Year"], y=df_hist["Energy_Consumption_kWh"],
+            mode="lines+markers", name="Historis"
+        ))
+
+        fig2.add_trace(go.Scatter(
+            x=df_future["Year"], y=df_future["Predicted_Energy_kWh"],
+            mode="lines+markers", name="Prediksi"
+        ))
+
+        fig2.update_layout(
+            xaxis=dict(title="Tahun", tickformat="d"),
+            yaxis=dict(title="Energi (kWh)"),
+            height=420
+        )
+
+        st.plotly_chart(fig2, use_container_width=True)
+
 
 # --- HALAMAN 2: DEC (CLUSTERING) ---
 elif pilihan_menu == "🧩 Clustering (DEC)":
