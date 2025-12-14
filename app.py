@@ -105,8 +105,15 @@ st.sidebar.title("🌍 Navigasi Utama")
 # A. PILIH MODE
 mode_analisis = st.sidebar.radio(
     "Mode Tampilan:",
-    ["📊 Executive Dashboard", "📈 Detail: Forecasting", "🧩 Detail: Clustering", "🔗 Detail: Kausalitas"]
+    [
+        "📊 Executive Dashboard",
+        "📈 Detail: Forecasting",
+        "🧩 Detail: Clustering",
+        "🤖 Deep Forest Classification",
+        "🔗 Detail: Kausalitas"
+    ]
 )
+
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🎛️ Filter Global")
@@ -348,9 +355,151 @@ elif mode_analisis == "🧩 Detail: Clustering":
             text=[selected_country], textposition="top center", name=selected_country
         ))
     st.plotly_chart(fig_sc, use_container_width=True)
+# =====================================================================
+# DEEP FOREST CLASSIFICATION (CSV-BASED, NO MODEL FILE)
+# =====================================================================
+
+# Tambahkan menu baru ke sidebar (langsung, sederhana)
+if "🤖 Deep Forest Classification" not in [
+    "📊 Executive Dashboard",
+    "📈 Detail: Forecasting",
+    "🧩 Detail: Clustering",
+    "🔗 Detail: Kausalitas"
+]:
+    pass  # aman, menu ditambahkan manual di bawah
+
+
+# ==============================
+# HALAMAN DEEP FOREST
+# ==============================
+if mode_analisis == "🤖 Deep Forest Classification":
+
+    st.header("🤖 Deep Forest Classification")
+    st.markdown("""
+    Halaman ini menampilkan **hasil klasifikasi Deep Forest**  
+    berdasarkan **output model yang telah dilatih sebelumnya** (`CSV`).
+    """)
+
+    # Load data Deep Forest dari CSV
+    try:
+        df_df = pd.read_csv("klasifikasi_deepforest.csv")
+    except:
+        st.error("❌ File `klasifikasi_deepforest.csv` tidak ditemukan.")
+        st.stop()
+
+    required_cols = [
+        "Country Name", "Year",
+        "GDP_per_Capita",
+        "Energy_Consumption_kWh",
+        "DeepForest_Predicted_Cluster"
+    ]
+
+    for col in required_cols:
+        if col not in df_df.columns:
+            st.error(f"❌ Kolom `{col}` tidak ada di CSV.")
+            st.stop()
+
+    # Label otomatis berbasis GDP rata-rata
+    avg_gdp = df_df.groupby("DeepForest_Predicted_Cluster")["GDP_per_Capita"].mean()
+
+    if len(avg_gdp) >= 2:
+        low_cluster = avg_gdp.idxmin()
+        high_cluster = avg_gdp.idxmax()
+        label_map = {
+            low_cluster: "Low Economy – Low Energy",
+            high_cluster: "High Economy – High Energy"
+        }
+    else:
+        label_map = {avg_gdp.index[0]: "Deep Forest Cluster"}
+
+    df_df["Cluster Label"] = df_df["DeepForest_Predicted_Cluster"].map(label_map)
+
+    # ==============================
+    # FILTER
+    # ==============================
+    st.subheader("🎛️ Filter Data")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        country = st.selectbox(
+            "Pilih Negara",
+            sorted(df_df["Country Name"].unique())
+        )
+
+    with col2:
+        year = st.selectbox(
+            "Pilih Tahun",
+            sorted(df_df[df_df["Country Name"] == country]["Year"].unique())
+        )
+
+    row = df_df[
+        (df_df["Country Name"] == country) &
+        (df_df["Year"] == year)
+    ]
+
+    if row.empty:
+        st.warning("⚠️ Data tidak tersedia.")
+        st.stop()
+
+    r = row.iloc[0]
+
+    # ==============================
+    # OUTPUT
+    # ==============================
+    st.success("✅ Hasil Klasifikasi Deep Forest")
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric("GDP per Kapita", f"${r['GDP_per_Capita']:,.0f}")
+    c2.metric("Konsumsi Energi", f"{r['Energy_Consumption_kWh']:,.0f} kWh")
+    c3.metric("Cluster", int(r["DeepForest_Predicted_Cluster"]))
+
+    label = r["Cluster Label"]
+    badge = "🟥" if "Low" in label else "🟩"
+
+    st.markdown(f"## {badge} **{label}**")
+
+    # ==============================
+    # POSISI PADA SCATTER
+    # ==============================
+    st.subheader("📊 Posisi Global (Deep Forest)")
+
+    fig = px.scatter(
+        df_df[df_df["Year"] == year],
+        x="GDP_per_Capita",
+        y="Energy_Consumption_kWh",
+        color="Cluster Label",
+        hover_name="Country Name",
+        color_discrete_map={
+            "Low Economy – Low Energy": "#FF6B6B",
+            "High Economy – High Energy": "#4ECDC4"
+        }
+    )
+
+    fig.add_trace(go.Scatter(
+        x=[r["GDP_per_Capita"]],
+        y=[r["Energy_Consumption_kWh"]],
+        mode="markers",
+        marker=dict(size=20, symbol="star", color="yellow", line=dict(width=2, color="black")),
+        name=country
+    ))
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.info("""
+    ℹ️ **Catatan Metodologi**
+    - Model Deep Forest dilatih di luar aplikasi
+    - Aplikasi ini menampilkan **hasil klasifikasi resmi**
+    - Pendekatan ini umum untuk sistem analitik & dashboard
+    """)
+
+# =====================================================================
+# END DEEP FOREST CLASSIFICATION
+# =====================================================================
 
 # -------------------------------------------------------------------------
-# 7. HALAMAN DETAIL: KAUSALITAS (GRANGER) - DENGAN LAYOUT BARU
+# 8. HALAMAN DETAIL: KAUSALITAS (GRANGER) - DENGAN LAYOUT BARU
 # -------------------------------------------------------------------------
 elif mode_analisis == "🔗 Detail: Kausalitas":
     st.header("🔗 Analisis Kausalitas Energi & Ekonomi")
